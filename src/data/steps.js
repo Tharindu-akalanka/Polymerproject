@@ -1,0 +1,16 @@
+export const INITIAL_STEPS = [
+  { id: 1, title: 'Idea screening', completed: false },
+  { id: 2, title: 'Decide product and survey', completed: false },
+  { id: 3, title: 'Market survey', completed: false },
+  { id: 4, title: 'Instrument and budget report', completed: false },
+  { id: 5, title: 'Deciding production method', completed: false },
+  { id: 6, title: 'Project proposal', completed: false },
+  { id: 7, title: 'Mold design', completed: false },
+  { id: 8, title: 'Formulation preparation', completed: false },
+  { id: 9, title: 'Material collection', completed: false },
+  { id: 10, title: 'Production of product', completed: false },
+  { id: 11, title: 'Quality testing', completed: false },
+  { id: 12, title: 'Issue correction and rework', completed: false },
+  { id: 13, title: 'Final testing', completed: false },
+  { id: 14, title: 'Documentation', completed: false },
+];
