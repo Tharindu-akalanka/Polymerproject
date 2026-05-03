@@ -15,15 +15,21 @@ const Dashboard = ({ isAuthenticated, studentId, onLogout, onLoginClick }) => {
     
     const unsubscribe = onSnapshot(stepsCollection, (snapshot) => {
       if (snapshot.empty) {
+        setSteps(INITIAL_STEPS);
         // Initialize Firestore with default steps if empty
         INITIAL_STEPS.forEach(step => {
-          setDoc(doc(db, "steps", step.id.toString()), step);
+          setDoc(doc(db, "steps", step.id.toString()), step).catch(err => {
+             console.error("Error initializing step:", err);
+          });
         });
       } else {
         const stepsData = snapshot.docs.map(doc => doc.data());
         stepsData.sort((a, b) => a.id - b.id);
         setSteps(stepsData);
       }
+    }, (error) => {
+      console.error("Firestore onSnapshot error:", error);
+      setSteps(INITIAL_STEPS); // Fallback so UI doesn't break if rules are wrong
     });
 
     return () => unsubscribe();
