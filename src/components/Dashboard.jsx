@@ -4,41 +4,90 @@ import CircularProgress from './CircularProgress';
 import StepCard from './StepCard';
 import { INITIAL_STEPS } from '../data/steps';
 
+import { collection, onSnapshot, doc, updateDoc, setDoc } from "firebase/firestore";
+import { db } from "../firebase";
+
 const Dashboard = ({ isAuthenticated, studentId, onLogout, onLoginClick }) => {
-  const [steps, setSteps] = useState(() => {
-    const savedSteps = localStorage.getItem('projectSteps');
-    return savedSteps ? JSON.parse(savedSteps) : INITIAL_STEPS;
-  });
+  const [steps, setSteps] = useState([]);
 
   useEffect(() => {
-    localStorage.setItem('projectSteps', JSON.stringify(steps));
-  }, [steps]);
+    const stepsCollection = collection(db, "steps");
+    
+    const unsubscribe = onSnapshot(stepsCollection, (snapshot) => {
+      if (snapshot.empty) {
+        // Initialize Firestore with default steps if empty
+        INITIAL_STEPS.forEach(step => {
+          setDoc(doc(db, "steps", step.id.toString()), step);
+        });
+      } else {
+        const stepsData = snapshot.docs.map(doc => doc.data());
+        stepsData.sort((a, b) => a.id - b.id);
+        setSteps(stepsData);
+      }
+    });
 
-  const toggleStep = (id) => {
+    return () => unsubscribe();
+  }, []);
+
+  const toggleStep = async (id) => {
     if (!isAuthenticated) {
       alert("Please login as a team member to update progress.");
       return;
     }
-    setSteps(steps.map(step => 
-      step.id === id ? { ...step, completed: !step.completed } : step
-    ));
+    
+    const stepToUpdate = steps.find(s => s.id === id);
+    const stepRef = doc(db, "steps", id.toString());
+    
+    try {
+      // Optimistic update
+      setSteps(steps.map(step => step.id === id ? { ...step, completed: !step.completed } : step));
+      // Update Firestore
+      await updateDoc(stepRef, { completed: !stepToUpdate.completed });
+    } catch (err) {
+      console.error("Error updating step:", err);
+    }
   };
 
-  const handleUpload = (id, fileName) => {
+  const handleUpload = async (id, fileName) => {
     if (!isAuthenticated) return;
-    setSteps(steps.map(step => 
-      step.id === id ? { ...step, attachment: fileName } : step
-    ));
+    
+    const stepRef = doc(db, "steps", id.toString());
+    
+    try {
+      // Optimistic update
+      setSteps(steps.map(step => step.id === id ? { ...step, attachment: fileName } : step));
+      // Update Firestore
+      await updateDoc(stepRef, { attachment: fileName });
+    } catch (err) {
+      console.error("Error updating step:", err);
+    }
   };
 
-  const resetProgress = () => {
+  const resetProgress = async () => {
     if (window.confirm('Are you sure you want to reset all progress?')) {
-      setSteps(INITIAL_STEPS);
+      // Optimistic reset
+      const resetSteps = steps.map(s => {
+        const { attachment, ...rest } = s; 
+        return { ...rest, completed: false, attachment: null }; // Also clear attachment in state
+      });
+      setSteps(resetSteps);
+      
+      try {
+        await Promise.all(
+          steps.map(step => {
+            const stepRef = doc(db, "steps", step.id.toString());
+            // Reset to uncompleted and remove attachment field (or set to null)
+            return updateDoc(stepRef, { completed: false, attachment: null });
+          })
+        );
+      } catch (err) {
+        console.error("Error resetting steps:", err);
+      }
     }
   };
 
   const completedCount = steps.filter(step => step.completed).length;
-  const progressPercentage = (completedCount / steps.length) * 100;
+  const progressPercentage = steps.length > 0 ? (completedCount / steps.length) * 100 : 0;
 
   return (
     <div className="min-h-screen pb-20">
