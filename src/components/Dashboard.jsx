@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { LogOut, RotateCcw, Leaf, LogIn } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { LogOut, RotateCcw, Leaf, LogIn, Save } from 'lucide-react';
 import CircularProgress from './CircularProgress';
 import StepCard from './StepCard';
 import { INITIAL_STEPS } from '../data/steps';
@@ -9,6 +9,13 @@ import { db } from "../firebase";
 
 const Dashboard = ({ isAuthenticated, studentId, onLogout, onLoginClick }) => {
   const [steps, setSteps] = useState([]);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const unsavedChangesRef = useRef(false);
+
+  useEffect(() => {
+    unsavedChangesRef.current = hasUnsavedChanges;
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     const stepsCollection = collection(db, "steps");
@@ -23,6 +30,7 @@ const Dashboard = ({ isAuthenticated, studentId, onLogout, onLoginClick }) => {
           });
         });
       } else {
+        if (unsavedChangesRef.current) return; // Prevent overwriting local edits
         const stepsData = snapshot.docs.map(doc => doc.data());
         stepsData.sort((a, b) => a.id - b.id);
         setSteps(stepsData);
@@ -35,60 +43,53 @@ const Dashboard = ({ isAuthenticated, studentId, onLogout, onLoginClick }) => {
     return () => unsubscribe();
   }, []);
 
-  const toggleStep = async (id) => {
+  const toggleStep = (id) => {
     if (!isAuthenticated) {
       alert("Please login as a team member to update progress.");
       return;
     }
     
-    const stepToUpdate = steps.find(s => s.id === id);
-    const stepRef = doc(db, "steps", id.toString());
-    
-    try {
-      // Optimistic update
-      setSteps(steps.map(step => step.id === id ? { ...step, completed: !step.completed } : step));
-      // Update Firestore
-      await updateDoc(stepRef, { completed: !stepToUpdate.completed });
-    } catch (err) {
-      console.error("Error updating step:", err);
-    }
+    setSteps(steps.map(step => step.id === id ? { ...step, completed: !step.completed } : step));
+    setHasUnsavedChanges(true);
   };
 
-  const handleUpload = async (id, fileName) => {
+  const handleUpload = (id, fileName) => {
     if (!isAuthenticated) return;
     
-    const stepRef = doc(db, "steps", id.toString());
-    
-    try {
-      // Optimistic update
-      setSteps(steps.map(step => step.id === id ? { ...step, attachment: fileName } : step));
-      // Update Firestore
-      await updateDoc(stepRef, { attachment: fileName });
-    } catch (err) {
-      console.error("Error updating step:", err);
+    setSteps(steps.map(step => step.id === id ? { ...step, attachment: fileName } : step));
+    setHasUnsavedChanges(true);
+  };
+
+  const resetProgress = () => {
+    if (window.confirm('Are you sure you want to reset all progress?')) {
+      const resetSteps = steps.map(s => {
+        const { attachment, ...rest } = s; 
+        return { ...rest, completed: false, attachment: null }; 
+      });
+      setSteps(resetSteps);
+      setHasUnsavedChanges(true);
     }
   };
 
-  const resetProgress = async () => {
-    if (window.confirm('Are you sure you want to reset all progress?')) {
-      // Optimistic reset
-      const resetSteps = steps.map(s => {
-        const { attachment, ...rest } = s; 
-        return { ...rest, completed: false, attachment: null }; // Also clear attachment in state
-      });
-      setSteps(resetSteps);
-      
-      try {
-        await Promise.all(
-          steps.map(step => {
-            const stepRef = doc(db, "steps", step.id.toString());
-            // Reset to uncompleted and remove attachment field (or set to null)
-            return updateDoc(stepRef, { completed: false, attachment: null });
-          })
-        );
-      } catch (err) {
-        console.error("Error resetting steps:", err);
-      }
+  const saveChanges = async () => {
+    setIsSaving(true);
+    try {
+      await Promise.all(
+        steps.map(step => {
+          const stepRef = doc(db, "steps", step.id.toString());
+          return updateDoc(stepRef, { 
+             completed: step.completed, 
+             attachment: step.attachment || null 
+          });
+        })
+      );
+      setHasUnsavedChanges(false);
+      // alert("Changes saved successfully!");
+    } catch (err) {
+      console.error("Error saving changes:", err);
+      alert("Failed to save changes. Make sure Firebase rules are updated.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -106,6 +107,16 @@ const Dashboard = ({ isAuthenticated, studentId, onLogout, onLoginClick }) => {
         <div className="flex items-center gap-4">
           {isAuthenticated ? (
             <>
+              {hasUnsavedChanges && (
+                <button 
+                  onClick={saveChanges}
+                  disabled={isSaving}
+                  className="flex items-center gap-2 text-sm bg-eco-light text-eco-dark hover:bg-white px-3 py-1.5 rounded-md transition-colors font-semibold disabled:opacity-50"
+                >
+                  <Save size={16} />
+                  <span className="hidden sm:inline">{isSaving ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              )}
               <button 
                 onClick={resetProgress}
                 className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
